@@ -45,7 +45,23 @@ url="${RELEASE_BASE%/}/$name.tar.gz"
 echo "downloading $url ..."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 "$url" -o "$tmp/$name.tar.gz"
+# Download with resume: large binaries often break on flaky links.
+fetch() {
+  dest=$1
+  url=$2
+  attempt=0
+  while [ "$attempt" -lt 12 ]; do
+    attempt=$((attempt + 1))
+    if curl -fsSL --connect-timeout 20 --retry 3 --retry-all-errors -C - -o "$dest" "$url"; then
+      return 0
+    fi
+    size=$(wc -c < "$dest" 2>/dev/null || echo 0)
+    echo "download interrupted at ${size} bytes (attempt $attempt); resuming ..." >&2
+    sleep 2
+  done
+  return 1
+}
+fetch "$tmp/$name.tar.gz" "$url"
 if curl -fsSL --retry 3 --retry-all-errors "${url}.sha256" -o "$tmp/checksum.txt" 2>/dev/null; then
   expected=$(awk '{print $1}' "$tmp/checksum.txt" | head -1)
   if command -v sha256sum >/dev/null 2>&1; then
