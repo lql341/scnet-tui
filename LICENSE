@@ -1,0 +1,13 @@
+Copyright (c) 2026 Marshall Lew. All rights reserved.
+
+This repository distributes prebuilt binaries and an installer for the scnet
+terminal client. The binaries are provided for use under the terms published
+with each release. Redistribution of the binaries or installer, in whole or in
+part, requires written permission.
+
+The bundled `pi` component is licensed under the MIT License; its notice is
+included in each release archive as LICENSE.pi and THIRD_PARTY_NOTICES.md.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
