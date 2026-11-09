@@ -41,10 +41,6 @@ json_field() {
   printf '%s' "$1" | tr -d '\n' | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p" | head -1
 }
 
-name="scnet-$VERSION-$platform-$cpu.tar.gz"
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-dest="$tmp/$name"
 
 asset_id_for() {
   # asset_id_for <release-json> <asset-name>
@@ -108,6 +104,11 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
+
+name="scnet-$VERSION-$platform-$cpu.tar.gz"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+dest="$tmp/$name"
 # Download with resume; binary releases are large and links can drop.
 fetch() {
   url=$1
