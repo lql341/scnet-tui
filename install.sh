@@ -45,8 +45,8 @@ url="${RELEASE_BASE%/}/$name.tar.gz"
 echo "downloading $url ..."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-curl -fsSL "$url" -o "$tmp/$name.tar.gz"
-if curl -fsSL "${url}.sha256" -o "$tmp/checksum.txt" 2>/dev/null; then
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 20 "$url" -o "$tmp/$name.tar.gz"
+if curl -fsSL --retry 3 --retry-all-errors "${url}.sha256" -o "$tmp/checksum.txt" 2>/dev/null; then
   expected=$(awk '{print $1}' "$tmp/checksum.txt" | head -1)
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$tmp/$name.tar.gz" | awk '{print $1}')
