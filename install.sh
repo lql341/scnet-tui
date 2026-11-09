@@ -57,26 +57,31 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 dest="$tmp/$name"
 
-resolve_url() {
-  if [ -n "$MIRROR" ]; then
-    printf '%s/%s' "${MIRROR%/}" "$name"
-    return
-  fi
-  release=$(curl -fsSL --retry 3 "$API/releases/tags/v$VERSION" 2>/dev/null) || return 1
-  asset_id=$(printf '%s' "$release" | tr ',' '\n' | grep -B2 "\"name\": \"$name\"" | sed -n 's/.*"id": \([0-9]*\).*/\1/p' | head -1)
-  [ -n "$asset_id" ] || return 1
-  printf 'https://api.github.com/repos/%s/releases/assets/%s' "$REPO" "$asset_id"
+asset_id_for() {
+  # asset_id_for <release-json> <asset-name>
+  printf '%s' "$1" | tr -d ' \n\t' | sed -n 's/.*"assets":\(\[[^]]*\]\).*/\1/p' | sed 's/},{/}\n{/g' | awk -v want="$2" '
+    {
+      id=""; nm="";
+      if (match($0, /"id":[0-9]+/)) id = substr($0, RSTART+5, RLENGTH-5);
+      if (match($0, /"name":"[^"]*"/)) nm = substr($0, RSTART+8, RLENGTH-9);
+      if (nm == want && id != "") { print id; exit }
+    }'
 }
 
-checksum_url() {
+release_json() {
+  curl -fsSL --retry 3 "$API/releases/tags/v$VERSION" 2>/dev/null
+}
+
+asset_url() {
+  # asset_url <asset-name>
   if [ -n "$MIRROR" ]; then
-    printf '%s/%s.sha256' "${MIRROR%/}" "$name"
-    return
+    printf '%s/%s' "${MIRROR%/}" "$1"
+    return 0
   fi
-  release=$(curl -fsSL --retry 3 "$API/releases/tags/v$VERSION" 2>/dev/null) || return 1
-  asset_id=$(printf '%s' "$release" | tr ',' '\n' | grep -B2 "\"name\": \"$name.sha256\"" | sed -n 's/.*"id": \([0-9]*\).*/\1/p' | head -1)
-  [ -n "$asset_id" ] || return 1
-  printf 'https://api.github.com/repos/%s/releases/assets/%s' "$REPO" "$asset_id"
+  json=$(release_json) || return 1
+  id=$(asset_id_for "$json" "$1")
+  [ -n "$id" ] || return 1
+  printf 'https://api.github.com/repos/%s/releases/assets/%s' "$REPO" "$id"
 }
 
 # Download with resume; binary releases are large and links can drop.
@@ -95,11 +100,12 @@ fetch() {
   return 1
 }
 
-url=$(resolve_url) || { echo "could not resolve release asset $name" >&2; exit 1; }
+url=$(asset_url "$name") || { echo "could not resolve release asset $name" >&2; exit 1; }
 echo "downloading $name ..."
 fetch "$url"
 
-if checksum_url > "$tmp/checksum.txt" 2>/dev/null; then
+sum_url=$(asset_url "$name.sha256" 2>/dev/null || true)
+if [ -n "$sum_url" ] && curl -fsSL --retry 3 -H 'Accept: application/octet-stream' -o "$tmp/checksum.txt" "$sum_url" 2>/dev/null; then
   expected=$(awk '{print $1}' "$tmp/checksum.txt" | head -1)
   if command -v sha256sum >/dev/null 2>&1; then
     actual=$(sha256sum "$dest" | awk '{print $1}')
