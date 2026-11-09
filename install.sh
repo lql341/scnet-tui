@@ -8,6 +8,7 @@
 set -euo pipefail
 
 RELEASE_BASE="${SCNET_RELEASE_BASE:-https://github.com/lql341/scnet-tui/releases/latest/download}"
+VERSION_URL="${SCNET_VERSION_URL:-https://raw.githubusercontent.com/lql341/scnet-tui/main/version.txt}"
 INSTALL_DIR="${SCNET_INSTALL_DIR:-$HOME/.local/share/scnet}"
 BIN_DIR="${SCNET_BIN_DIR:-$HOME/.local/bin}"
 VERSION="${SCNET_VERSION:-}"
@@ -32,7 +33,7 @@ case "$arch" in
 esac
 
 if [ -z "$VERSION" ]; then
-  VERSION=$(curl -fsSL "${SCNET_RELEASE_BASE%/}/version.txt" 2>/dev/null | tr -d '[:space:]') || true
+  VERSION=$(curl -fsSL "$VERSION_URL" 2>/dev/null | tr -d '[:space:]') || true
 fi
 if [ -z "$VERSION" ]; then
   echo "could not determine the latest version; set SCNET_VERSION" >&2
@@ -40,14 +41,18 @@ if [ -z "$VERSION" ]; then
 fi
 
 name="scnet-$VERSION-$platform-$cpu"
-url="${SCNET_RELEASE_BASE%/}/$name.tar.gz"
+url="${RELEASE_BASE%/}/$name.tar.gz"
 echo "downloading $url ..."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 curl -fsSL "$url" -o "$tmp/$name.tar.gz"
 if curl -fsSL "${url}.sha256" -o "$tmp/checksum.txt" 2>/dev/null; then
   expected=$(awk '{print $1}' "$tmp/checksum.txt" | head -1)
-  actual=$(sha256sum "$tmp/$name.tar.gz" | awk '{print $1}')
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$tmp/$name.tar.gz" | awk '{print $1}')
+  else
+    actual=$(shasum -a 256 "$tmp/$name.tar.gz" | awk '{print $1}')
+  fi
   if [ -n "$expected" ] && [ "$expected" != "$actual" ]; then
     echo "checksum mismatch: expected $expected, got $actual" >&2
     exit 1
