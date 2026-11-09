@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 #
-# scnet installer (binary release):
+# scnet installer (prebuilt binary):
 #   curl -fsSL https://raw.githubusercontent.com/lql341/scnet-tui/main/install.sh | bash
 #
-# Downloads the prebuilt single-file binary for this platform. The source code
-# is not distributed through this installer.
+# Resolves the latest release asset, downloads it with resume support, verifies
+# sha256 when available, then links ~/.local/bin/scnet.
 set -euo pipefail
 
-RELEASE_BASE="${SCNET_RELEASE_BASE:-https://github.com/lql341/scnet-tui/releases/latest/download}"
-VERSION_URL="${SCNET_VERSION_URL:-https://raw.githubusercontent.com/lql341/scnet-tui/main/version.txt}"
+REPO="${SCNET_REPO:-lql341/scnet-tui}"
+API="${SCNET_API:-https://api.github.com/repos/$REPO}"
 INSTALL_DIR="${SCNET_INSTALL_DIR:-$HOME/.local/share/scnet}"
 BIN_DIR="${SCNET_BIN_DIR:-$HOME/.local/bin}"
 VERSION="${SCNET_VERSION:-}"
+# Optional static mirror: https://host/path containing version.txt and assets.
+MIRROR="${SCNET_RELEASE_BASE:-}"
 
 need() {
   command -v "$1" >/dev/null 2>&1 || { echo "missing required command: $1" >&2; exit 1; }
@@ -24,7 +26,7 @@ arch=$(uname -m)
 case "$os" in
   Linux) platform=linux ;;
   Darwin) platform=darwin ;;
-  *) echo "unsupported OS: $os" >&2; exit 1 ;;
+  *) echo "unsupported OS: $os (linux and macOS are supported)" >&2; exit 1 ;;
 esac
 case "$arch" in
   x86_64|amd64) cpu=x64 ;;
@@ -32,27 +34,58 @@ case "$arch" in
   *) echo "unsupported architecture: $arch" >&2; exit 1 ;;
 esac
 
+json_field() {
+  # Minimal JSON string/number extractor: json_field <json> <key>
+  printf '%s' "$1" | tr -d '\n' | sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\{0,1\}\([^\",}]*\)\"\{0,1\}.*/\1/p" | head -1
+}
+
 if [ -z "$VERSION" ]; then
-  VERSION=$(curl -fsSL "$VERSION_URL" 2>/dev/null | tr -d '[:space:]') || true
+  if [ -n "$MIRROR" ]; then
+    VERSION=$(curl -fsSL --retry 3 "${MIRROR%/}/version.txt" 2>/dev/null | tr -d '[:space:]') || true
+  else
+    release=$(curl -fsSL --retry 3 "$API/releases/latest" 2>/dev/null) || release=''
+    VERSION=$(json_field "$release" tag_name | sed 's/^v//')
+  fi
 fi
 if [ -z "$VERSION" ]; then
-  echo "could not determine the latest version; set SCNET_VERSION" >&2
+  echo "could not determine the latest version; set SCNET_VERSION (e.g. SCNET_VERSION=0.1.0)" >&2
   exit 1
 fi
 
-name="scnet-$VERSION-$platform-$cpu"
-url="${RELEASE_BASE%/}/$name.tar.gz"
-echo "downloading $url ..."
+name="scnet-$VERSION-$platform-$cpu.tar.gz"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-# Download with resume: large binaries often break on flaky links.
+dest="$tmp/$name"
+
+resolve_url() {
+  if [ -n "$MIRROR" ]; then
+    printf '%s/%s' "${MIRROR%/}" "$name"
+    return
+  fi
+  release=$(curl -fsSL --retry 3 "$API/releases/tags/v$VERSION" 2>/dev/null) || return 1
+  asset_id=$(printf '%s' "$release" | tr ',' '\n' | grep -B2 "\"name\": \"$name\"" | sed -n 's/.*"id": \([0-9]*\).*/\1/p' | head -1)
+  [ -n "$asset_id" ] || return 1
+  printf 'https://api.github.com/repos/%s/releases/assets/%s' "$REPO" "$asset_id"
+}
+
+checksum_url() {
+  if [ -n "$MIRROR" ]; then
+    printf '%s/%s.sha256' "${MIRROR%/}" "$name"
+    return
+  fi
+  release=$(curl -fsSL --retry 3 "$API/releases/tags/v$VERSION" 2>/dev/null) || return 1
+  asset_id=$(printf '%s' "$release" | tr ',' '\n' | grep -B2 "\"name\": \"$name.sha256\"" | sed -n 's/.*"id": \([0-9]*\).*/\1/p' | head -1)
+  [ -n "$asset_id" ] || return 1
+  printf 'https://api.github.com/repos/%s/releases/assets/%s' "$REPO" "$asset_id"
+}
+
+# Download with resume; binary releases are large and links can drop.
 fetch() {
-  dest=$1
-  url=$2
+  url=$1
   attempt=0
-  while [ "$attempt" -lt 12 ]; do
+  while [ "$attempt" -lt 15 ]; do
     attempt=$((attempt + 1))
-    if curl -fsSL --connect-timeout 20 --retry 3 --retry-all-errors -C - -o "$dest" "$url"; then
+    if curl -fsSL --connect-timeout 20 -H 'Accept: application/octet-stream' -C - -o "$dest" "$url"; then
       return 0
     fi
     size=$(wc -c < "$dest" 2>/dev/null || echo 0)
@@ -61,13 +94,17 @@ fetch() {
   done
   return 1
 }
-fetch "$tmp/$name.tar.gz" "$url"
-if curl -fsSL --retry 3 --retry-all-errors "${url}.sha256" -o "$tmp/checksum.txt" 2>/dev/null; then
+
+url=$(resolve_url) || { echo "could not resolve release asset $name" >&2; exit 1; }
+echo "downloading $name ..."
+fetch "$url"
+
+if checksum_url > "$tmp/checksum.txt" 2>/dev/null; then
   expected=$(awk '{print $1}' "$tmp/checksum.txt" | head -1)
   if command -v sha256sum >/dev/null 2>&1; then
-    actual=$(sha256sum "$tmp/$name.tar.gz" | awk '{print $1}')
+    actual=$(sha256sum "$dest" | awk '{print $1}')
   else
-    actual=$(shasum -a 256 "$tmp/$name.tar.gz" | awk '{print $1}')
+    actual=$(shasum -a 256 "$dest" | awk '{print $1}')
   fi
   if [ -n "$expected" ] && [ "$expected" != "$actual" ]; then
     echo "checksum mismatch: expected $expected, got $actual" >&2
@@ -78,12 +115,12 @@ fi
 
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-tar -xzf "$tmp/$name.tar.gz" -C "$INSTALL_DIR"
+tar -xzf "$dest" -C "$INSTALL_DIR"
 chmod +x "$INSTALL_DIR/scnet"
 mkdir -p "$BIN_DIR"
 ln -sfn "$INSTALL_DIR/scnet" "$BIN_DIR/scnet"
 
 echo
-echo "installed: $BIN_DIR/scnet"
+echo "installed: $BIN_DIR/scnet (version $VERSION)"
 echo "add to PATH if needed: export PATH=\"$BIN_DIR:\$PATH\""
 echo "next: scnet doctor && scnet login"
