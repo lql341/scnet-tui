@@ -86,12 +86,19 @@ asset_url() {
   printf 'https://api.github.com/repos/%s/releases/assets/%s' "$REPO" "$id"
 }
 
+cache_bust() {
+  case "$1" in
+    http://*|https://*) printf '%s%st=%s' "$1" "$(printf '%s' "$1" | grep -q '?' && printf '&' || printf '?')" "$(date +%s)" ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 if [ -z "$VERSION" ]; then
   if [ -n "$MIRROR" ]; then
-    VERSION=$(curl -fsSL --retry 3 "${MIRROR%/}/version.txt?t=$(date +%s)" 2>/dev/null | tr -d '[:space:]') || true
+    VERSION=$(curl -fsSL --retry 3 "$(cache_bust "${MIRROR%/}/version.txt")" 2>/dev/null | tr -d '[:space:]') || true
   else
     # Prefer version.txt on the default branch: no API call, no rate limit.
-    VERSION=$(curl -fsSL --retry 3 "https://raw.githubusercontent.com/$REPO/main/version.txt?t=$(date +%s)" 2>/dev/null | tr -d '[:space:]') || VERSION=''
+    VERSION=$(curl -fsSL --retry 3 "$(cache_bust "https://raw.githubusercontent.com/$REPO/main/version.txt")" 2>/dev/null | tr -d '[:space:]') || VERSION=''
     if [ -z "$VERSION" ]; then
       release=$(api_curl "$API/releases/latest" 2>/dev/null) || release=''
       VERSION=$(json_field "$release" tag_name | sed 's/^v//')
