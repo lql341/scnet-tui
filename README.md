@@ -20,7 +20,7 @@ curl -fsSL https://raw.githubusercontent.com/lql341/scnet-tui/main/install.sh | 
 可选环境变量：
 
 ```bash
-SCNET_VERSION=0.1.22                # 指定版本（示例）
+SCNET_VERSION=0.1.23                # 指定版本（示例）
 GITHUB_TOKEN=ghp_xxx                # 提升 GitHub API 限额（可选）
 SCNET_INSTALL_DIR=$HOME/.local/share/scnet
 SCNET_BIN_DIR=$HOME/.local/bin
