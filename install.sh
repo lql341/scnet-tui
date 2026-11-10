@@ -88,10 +88,10 @@ asset_url() {
 
 if [ -z "$VERSION" ]; then
   if [ -n "$MIRROR" ]; then
-    VERSION=$(curl -fsSL --retry 3 "${MIRROR%/}/version.txt" 2>/dev/null | tr -d '[:space:]') || true
+    VERSION=$(curl -fsSL --retry 3 "${MIRROR%/}/version.txt?t=$(date +%s)" 2>/dev/null | tr -d '[:space:]') || true
   else
     # Prefer version.txt on the default branch: no API call, no rate limit.
-    VERSION=$(curl -fsSL --retry 3 "https://raw.githubusercontent.com/$REPO/main/version.txt" 2>/dev/null | tr -d '[:space:]') || VERSION=''
+    VERSION=$(curl -fsSL --retry 3 "https://raw.githubusercontent.com/$REPO/main/version.txt?t=$(date +%s)" 2>/dev/null | tr -d '[:space:]') || VERSION=''
     if [ -z "$VERSION" ]; then
       release=$(api_curl "$API/releases/latest" 2>/dev/null) || release=''
       VERSION=$(json_field "$release" tag_name | sed 's/^v//')
