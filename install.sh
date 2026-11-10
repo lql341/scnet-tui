@@ -27,7 +27,8 @@ os=$(uname -s)
 arch=$(uname -m)
 case "$os" in
   Linux) platform=linux ;;
-  *) echo "unsupported OS: $os (scnet targets Linux only)" >&2; exit 1 ;;
+  Darwin) platform=darwin ;;
+  *) echo "unsupported OS: $os (supported: Linux, macOS)" >&2; exit 1 ;;
 esac
 case "$arch" in
   x86_64|amd64) cpu=x64 ;;
@@ -141,7 +142,11 @@ fi
 sum_url=$(asset_url "$name.sha256" 2>/dev/null || true)
 if [ -n "$sum_url" ] && curl -fsSL --retry 3 -H 'Accept: application/octet-stream' -o "$tmp/checksum.txt" "$sum_url" 2>/dev/null; then
   expected=$(awk '{print $1}' "$tmp/checksum.txt" | head -1)
-  actual=$(sha256sum "$dest" | awk '{print $1}')
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$dest" | awk '{print $1}')
+  else
+    actual=$(shasum -a 256 "$dest" | awk '{print $1}')
+  fi
   if [ -n "$expected" ] && [ "$expected" != "$actual" ]; then
     echo "checksum mismatch: expected $expected, got $actual" >&2
     exit 1
